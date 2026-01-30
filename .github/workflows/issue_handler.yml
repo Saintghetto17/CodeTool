@@ -1,0 +1,70 @@
+name: Issue Handler
+
+on:
+  issues:
+    types: [opened, labeled]
+
+jobs:
+  process-issue:
+    runs-on: ubuntu-latest
+    if: |
+      github.event.action == 'opened' ||
+      (github.event.action == 'labeled' && github.event.label.name == 'code-agent')
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      
+      - name: Configure Git
+        run: |
+          git config --global user.name "Code Agent Bot"
+          git config --global user.email "code-agent@users.noreply.github.com"
+      
+      - name: Process Issue
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPO: ${{ github.repository }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          YANDEX_API_KEY: ${{ secrets.YANDEX_API_KEY }}
+          YANDEX_FOLDER_ID: ${{ secrets.YANDEX_FOLDER_ID }}
+          LLM_PROVIDER: ${{ secrets.LLM_PROVIDER }}
+        run: |
+          python -m code_agent.cli process-issue ${{ github.event.issue.number }} --repo-path . --log-level INFO
+      
+      - name: Comment on Issue
+        if: success()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: '🤖 Code Agent has processed this issue and created a pull request. Check the linked PR for details.'
+            })
+      
+      - name: Handle Failure
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: '❌ Code Agent encountered an error while processing this issue. Please check the workflow logs for details.'
+            })
+

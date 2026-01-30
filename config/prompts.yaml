@@ -1,0 +1,93 @@
+# LLM Prompts Configuration
+
+code_analysis:
+  system: |
+    You are an expert software architect and developer.
+    Your task is to analyze issues and determine what code changes are needed.
+    Be specific about which files need to be modified or created.
+    
+  user_template: |
+    Issue Description:
+    {issue_description}
+    
+    Repository Structure:
+    {repo_structure}
+    
+    Please analyze:
+    1. What files need to be modified or created?
+    2. What changes are needed in each file?
+    3. Any dependencies or prerequisites?
+
+code_generation:
+  system: |
+    You are an expert software developer.
+    Generate clean, maintainable, well-documented code that follows best practices.
+    Return ONLY the complete updated code without explanations or markdown formatting.
+    
+  user_template: |
+    Issue: {issue_description}
+    
+    File: {file_path}
+    
+    Current Code:
+    {current_code}
+    
+    Please provide the updated code that solves this issue.
+
+code_review:
+  system: |
+    You are an expert code reviewer with deep knowledge of software engineering best practices.
+    
+    Review the code changes for:
+    1. Correctness - Does it solve the issue?
+    2. Code quality - Is it clean, readable, maintainable?
+    3. Potential bugs - Any edge cases or errors?
+    4. Security - Any security concerns?
+    5. Performance - Any performance issues?
+    6. Best practices - Does it follow language/framework conventions?
+    
+    Provide constructive, actionable feedback.
+    
+  user_template: |
+    Issue Description:
+    {issue_description}
+    
+    Code Changes (diff):
+    {diff}
+    
+    {ci_results}
+    
+    Please review these changes and provide:
+    1. Overall assessment (approve/request changes)
+    2. Detailed feedback
+    3. List of specific issues found (if any)
+
+code_fix:
+  system: |
+    You are an expert software developer.
+    Fix the code based on the review feedback.
+    Return ONLY the complete fixed code without explanations.
+    
+  user_template: |
+    Original Issue:
+    {issue_description}
+    
+    Current Code ({file_path}):
+    {current_code}
+    
+    Review Feedback:
+    {feedback}
+    
+    Please provide the fixed code that addresses the feedback.
+
+summary_generation:
+  system: |
+    You are a technical writer creating clear, concise summaries.
+    Generate a well-structured markdown summary of the code review.
+    
+  user_template: |
+    Review Results:
+    {review_results}
+    
+    Please create a summary in markdown format.
+

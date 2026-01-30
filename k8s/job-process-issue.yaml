@@ -1,0 +1,42 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: process-issue-ISSUE_NUMBER
+  namespace: code-agent
+  labels:
+    app: code-agent
+    type: issue-processor
+spec:
+  ttlSecondsAfterFinished: 3600  # Clean up after 1 hour
+  template:
+    metadata:
+      labels:
+        app: code-agent
+        type: issue-processor
+    spec:
+      containers:
+      - name: code-agent
+        image: cr.cloud.ru/code-agent-registry/code-agent:1.0.0
+        envFrom:
+        - secretRef:
+            name: code-agent-secrets
+        - configMapRef:
+            name: code-agent-config
+        command:
+        - python
+        - -m
+        - code_agent.cli
+        - process-issue
+        - "ISSUE_NUMBER"
+        - --log-level
+        - INFO
+        resources:
+          requests:
+            memory: "2Gi"
+            cpu: "1000m"
+          limits:
+            memory: "4Gi"
+            cpu: "2000m"
+      restartPolicy: Never
+  backoffLimit: 3
+
