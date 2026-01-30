@@ -23,7 +23,34 @@ services:
       - ~/.gitconfig:/home/codeagent/.gitconfig:ro
       - ~/.ssh:/home/codeagent/.ssh:ro
     working_dir: /workspace
-    command: ["--help"]
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["sleep infinity"]
+
+  # CLI runner: use image ENTRYPOINT (python -m code_agent.cli)
+  # Usage:
+  #   docker compose run --rm code-agent-cli review-pr 123
+  #   docker compose run --rm code-agent-cli process-issue 456
+  code-agent-cli:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: code-agent:latest
+    environment:
+      - GITHUB_TOKEN=${GITHUB_TOKEN}
+      - GITHUB_REPO=${GITHUB_REPO}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4o-mini}
+      - OPENAI_BASE_URL=${OPENAI_BASE_URL:-}
+      - YANDEX_API_KEY=${YANDEX_API_KEY:-}
+      - YANDEX_FOLDER_ID=${YANDEX_FOLDER_ID:-}
+      - LLM_PROVIDER=${LLM_PROVIDER:-openai}
+      - MAX_ITERATIONS=${MAX_ITERATIONS:-5}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    volumes:
+      - ./:/workspace:rw
+      - ~/.gitconfig:/home/codeagent/.gitconfig:ro
+      - ~/.ssh:/home/codeagent/.ssh:ro
+    working_dir: /workspace
     
   # Optional: Service for running in daemon mode with webhook server
   code-agent-server:
