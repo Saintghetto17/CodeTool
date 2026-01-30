@@ -1,12 +1,15 @@
 """LLM integration for Code Agent."""
 
 from abc import ABC, abstractmethod
+import logging
 from typing import Any
 
 import httpx
 from openai import OpenAI
 
 from code_agent.config import settings
+
+logger = logging.getLogger(__name__)
 
 
 class LLMProvider(ABC):
@@ -28,9 +31,20 @@ class OpenAIProvider(LLMProvider):
 
     def __init__(self) -> None:
         """Initialize OpenAI provider."""
+        # Compose often passes OPENAI_BASE_URL as an empty string; treat it as unset.
+        base_url = (settings.openai_base_url or "").strip() or None
+        # If a base URL is provided without scheme, default to https://
+        if base_url and not (base_url.startswith("http://") or base_url.startswith("https://")):
+            base_url = f"https://{base_url}"
+
+        if base_url:
+            logger.info("OpenAI base_url configured (%s)", base_url)
+        else:
+            logger.info("OpenAI base_url not set (using SDK default)")
+
         self.client = OpenAI(
             api_key=settings.openai_api_key,
-            base_url=settings.openai_base_url,
+            base_url=base_url,
         )
         self.model = settings.openai_model
 
@@ -177,7 +191,25 @@ class LLMService:
                 ),
             },
         ]
-        response = self.provider.generate(messages, temperature=0.3)
+        try:
+            response = self.provider.generate(messages, temperature=0.3)
+        except Exception as e:
+            # Don't fail the whole pipeline if LLM is temporarily unavailable or out of quota.
+            # Provide a deterministic fallback so CI/demo can proceed.
+            fallback = (
+                "LLM review could not be generated due to an upstream error.\n\n"
+                f"Error: {type(e).__name__}: {e}\n\n"
+                "Fallback review:\n"
+                f"- Diff length: {len(diff)} chars\n"
+                f"- Issue/context length: {len(issue_description)} chars\n"
+                "- Action: Please run the review again after fixing LLM connectivity/quota, "
+                "or perform a manual review."
+            )
+            return {
+                "approved": False,
+                "feedback": fallback,
+                "issues": ["LLM unavailable (see error in feedback)"],
+            }
 
         # Parse response (simplified - in production, use JSON parsing)
         return {

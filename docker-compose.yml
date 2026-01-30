@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   code-agent:
     build:
@@ -12,7 +10,9 @@ services:
       - GITHUB_REPO=${GITHUB_REPO}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4o-mini}
-      - OPENAI_BASE_URL=${OPENAI_BASE_URL:-}
+      # Important: empty OPENAI_BASE_URL breaks OpenAI SDK (missing http/https).
+      # Default to official endpoint.
+      - OPENAI_BASE_URL=${OPENAI_BASE_URL:-https://api.openai.com/v1}
       - YANDEX_API_KEY=${YANDEX_API_KEY:-}
       - YANDEX_FOLDER_ID=${YANDEX_FOLDER_ID:-}
       - LLM_PROVIDER=${LLM_PROVIDER:-openai}
@@ -40,7 +40,9 @@ services:
       - GITHUB_REPO=${GITHUB_REPO}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4o-mini}
-      - OPENAI_BASE_URL=${OPENAI_BASE_URL:-}
+      # Important: empty OPENAI_BASE_URL breaks OpenAI SDK (missing http/https).
+      # Default to official endpoint.
+      - OPENAI_BASE_URL=${OPENAI_BASE_URL:-https://api.openai.com/v1}
       - YANDEX_API_KEY=${YANDEX_API_KEY:-}
       - YANDEX_FOLDER_ID=${YANDEX_FOLDER_ID:-}
       - LLM_PROVIDER=${LLM_PROVIDER:-openai}

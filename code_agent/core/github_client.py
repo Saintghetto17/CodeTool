@@ -1,5 +1,6 @@
 """GitHub client for Code Agent."""
 
+import logging
 import os
 from typing import Any
 
@@ -11,6 +12,8 @@ from github.Repository import Repository
 
 from code_agent.config import settings
 
+logger = logging.getLogger(__name__)
+
 
 class GitHubClient:
     """Client for GitHub operations."""
@@ -21,6 +24,15 @@ class GitHubClient:
         self.repo_name = repo_name or settings.github_repo
         self.gh = Github(self.token)
         self.repo: Repository = self.gh.get_repo(self.repo_name)
+
+        # Debug breadcrumbs: show where we are going without leaking secrets
+        token_state = "set" if bool(self.token) else "empty"
+        logger.info(
+            "GitHubClient initialized (repo=%s, token=%s, api_repo_url=%s)",
+            self.repo_name,
+            token_state,
+            getattr(self.repo, "url", "unknown"),
+        )
 
     def get_issue(self, issue_number: int) -> Issue:
         """Get issue by number."""
@@ -52,6 +64,7 @@ class GitHubClient:
 
     def get_pull_request(self, pr_number: int) -> PullRequest:
         """Get pull request by number."""
+        logger.info("GET %s/pulls/%s", getattr(self.repo, "url", "unknown"), pr_number)
         return self.repo.get_pull(pr_number)
 
     def add_comment_to_pr(self, pr_number: int, comment: str) -> None:

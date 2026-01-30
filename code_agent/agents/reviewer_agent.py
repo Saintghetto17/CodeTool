@@ -25,6 +25,11 @@ class ReviewerAgent:
     def review_pull_request(self, pr_number: int) -> dict[str, Any]:
         """Review a pull request and provide feedback."""
         logger.info(f"Reviewing PR #{pr_number}")
+        logger.info(
+            "Review target repo=%s (api_repo_url=%s)",
+            getattr(self.github_client, "repo_name", "unknown"),
+            getattr(getattr(self.github_client, "repo", None), "url", "unknown"),
+        )
 
         # Get PR details
         pr = self.github_client.get_pull_request(pr_number)
@@ -116,7 +121,12 @@ class ReviewerAgent:
         except Exception as e:
             logger.error(f"Error posting review: {e}")
             # Fallback to comment
-            self.github_client.add_comment_to_pr(pr_number, body)
+            try:
+                self.github_client.add_comment_to_pr(pr_number, body)
+                logger.info(f"Posted fallback comment to PR #{pr_number}")
+            except Exception as e2:
+                # Don't fail the run if we don't have permission to write to the repo.
+                logger.error(f"Error posting fallback comment: {e2}")
 
     def _extract_issue_number(self, text: str) -> int | None:
         """Extract issue number from text."""
