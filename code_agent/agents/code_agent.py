@@ -3,7 +3,7 @@
 import json
 import logging
 import os
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -116,7 +116,7 @@ class CodeAgent:
             diff_rel_path = str(Path(".code_agent_demo") / diff_path.name)
             last_run = {
                 "demo_mode": True,
-                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "timestamp": datetime.now(UTC).isoformat(),
                 "repo_path": str(repo_root.resolve()),
                 "issue_number": issue_number,
                 "branch": branch_name,
@@ -178,7 +178,7 @@ class CodeAgent:
             repo_root = Path(self.repo_path)
             last_run = {
                 "demo_mode": True,
-                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "timestamp": datetime.now(UTC).isoformat(),
                 "repo_path": str(repo_root.resolve()),
                 "issue_number": issue_number,
                 "branch": branch_name,
