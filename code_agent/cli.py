@@ -58,8 +58,15 @@ def process_issue(
         result = agent.process_issue(issue_number)
 
         if result.get("success"):
-            console.print("[bold green]✓[/bold green] Successfully created pull request!")
-            console.print(f"  PR Number: #{result['pr_number']}")
+            if result.get("demo_mode"):
+                console.print("[bold yellow]⚠[/bold yellow] DEMO_MODE: PR was not created on GitHub (permissions).")
+                if result.get("diff_path"):
+                    console.print(f"  Local diff: {result['diff_path']}")
+                if result.get("pr_url"):
+                    console.print(f"  PR: {result['pr_url']}")
+            else:
+                console.print("[bold green]✓[/bold green] Successfully created pull request!")
+                console.print(f"  PR Number: #{result['pr_number']}")
             console.print(f"  Branch: {result['branch']}")
             console.print(f"  Files Modified: {len(result['files_modified'])}")
         else:
@@ -68,13 +75,20 @@ def process_issue(
 
     except Exception as e:
         console.print(f"[bold red]Error:[/bold red] {str(e)}")
-        logging.exception("Failed to process issue")
+        # Avoid scary tracebacks in demos; still keep details when DEBUG is enabled.
+        if logging.getLogger().isEnabledFor(logging.DEBUG):
+            logging.exception("Failed to process issue")
+        else:
+            logging.error("Failed to process issue: %s", e)
         sys.exit(1)
 
 
 @app.command()
 def review_pr(
     pr_number: int = typer.Argument(..., help="Pull request number to review"),
+    repo_path: str | None = typer.Option(
+        None, "--repo-path", "-r", help="Path to local repository (used for DEMO_MODE artifacts)"
+    ),
     log_level: str = typer.Option(
         settings.log_level, "--log-level", "-l", help="Logging level"
     ),
@@ -85,7 +99,7 @@ def review_pr(
     console.print(f"[bold blue]Reviewing PR #{pr_number}...[/bold blue]")
 
     try:
-        agent = ReviewerAgent()
+        agent = ReviewerAgent(repo_path=repo_path)
         result = agent.review_pull_request(pr_number)
 
         if result.get("approved"):
@@ -104,7 +118,10 @@ def review_pr(
 
     except Exception as e:
         console.print(f"[bold red]Error:[/bold red] {str(e)}")
-        logging.exception("Failed to review PR")
+        if logging.getLogger().isEnabledFor(logging.DEBUG):
+            logging.exception("Failed to review PR")
+        else:
+            logging.error("Failed to review PR: %s", e)
         sys.exit(1)
 
 
@@ -140,13 +157,19 @@ def fix_pr(
 
     except Exception as e:
         console.print(f"[bold red]Error:[/bold red] {str(e)}")
-        logging.exception("Failed to fix PR")
+        if logging.getLogger().isEnabledFor(logging.DEBUG):
+            logging.exception("Failed to fix PR")
+        else:
+            logging.error("Failed to fix PR: %s", e)
         sys.exit(1)
 
 
 @app.command()
 def generate_summary(
     pr_number: int = typer.Argument(..., help="Pull request number"),
+    repo_path: str | None = typer.Option(
+        None, "--repo-path", "-r", help="Path to local repository (used for DEMO_MODE artifacts)"
+    ),
     log_level: str = typer.Option(
         settings.log_level, "--log-level", "-l", help="Logging level"
     ),
@@ -155,7 +178,7 @@ def generate_summary(
     setup_logging(log_level)
 
     try:
-        agent = ReviewerAgent()
+        agent = ReviewerAgent(repo_path=repo_path)
         summary = agent.generate_review_summary(pr_number)
 
         # Print summary to stdout (can be captured by GitHub Actions)
@@ -163,7 +186,10 @@ def generate_summary(
 
     except Exception as e:
         console.print(f"[bold red]Error:[/bold red] {str(e)}")
-        logging.exception("Failed to generate summary")
+        if logging.getLogger().isEnabledFor(logging.DEBUG):
+            logging.exception("Failed to generate summary")
+        else:
+            logging.error("Failed to generate summary: %s", e)
         sys.exit(1)
 
 

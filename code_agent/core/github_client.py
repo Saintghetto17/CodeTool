@@ -1,7 +1,11 @@
 """GitHub client for Code Agent."""
 
+from __future__ import annotations
+
+import contextlib
 import logging
 import os
+import urllib.parse
 from typing import Any
 
 import git
@@ -153,10 +157,72 @@ class GitRepo:
         else:
             raise ValueError(f"Repository path does not exist: {repo_path}")
 
+        # Make git operations non-interactive and stable by default.
+        # This prevents hangs/crashes when git wants to prompt for credentials.
+        try:
+            self.repo.git.update_environment(GIT_TERMINAL_PROMPT="0")
+        except Exception:
+            # Not critical; best-effort only.
+            pass
+
+    @contextlib.contextmanager
+    def _authed_origin(self):
+        """
+        Temporarily rewrite origin URL to include a GitHub token for non-interactive push/pull.
+        Only applies to https://github.com/... remotes.
+        """
+        try:
+            origin = self.repo.remote(name="origin")
+            original = next(origin.urls)
+        except Exception:
+            yield
+            return
+
+        token = (settings.github_token or "").strip()
+        if not token:
+            yield
+            return
+
+        # Only rewrite GitHub HTTPS remotes that do not already contain credentials.
+        if not original.startswith("https://github.com/") or "@" in original:
+            yield
+            return
+
+        # For GitHub HTTPS auth with tokens, using "x-access-token" is the most robust username.
+        owner = "x-access-token"
+        token_enc = urllib.parse.quote(token, safe="")
+        # Use plain string replace to avoid regex escaping mistakes.
+        authed = original.replace(
+            "https://github.com/",
+            f"https://{owner}:{token_enc}@github.com/",
+            1,
+        )
+
+        # Best-effort: if we can't rewrite origin (e.g. read-only repo), continue without failing.
+        try:
+            origin.set_url(authed)
+            logger.info("Using token-authenticated origin for git operations (github.com)")
+            try:
+                yield
+            finally:
+                try:
+                    origin.set_url(original)
+                except Exception:
+                    pass
+        except Exception as e:
+            logger.warning(
+                "Could not rewrite origin URL for token auth (continuing without rewrite): %s: %s",
+                type(e).__name__,
+                e,
+            )
+            yield
+
     def create_branch(self, branch_name: str, base_branch: str = "main") -> None:
         """Create a new branch."""
-        self.repo.git.checkout(base_branch)
-        self.repo.git.pull()
+        with self._authed_origin():
+            self.repo.git.checkout(base_branch)
+            # Avoid merge prompts in automation
+            self.repo.git.pull("--ff-only")
 
         # Delete branch if it exists
         try:
@@ -178,7 +244,31 @@ class GitRepo:
     def push_branch(self, branch_name: str) -> None:
         """Push branch to remote."""
         origin = self.repo.remote(name="origin")
-        origin.push(branch_name, force=True)
+        # Always push using an explicit token-authenticated URL to avoid any interactive prompts.
+        token = (settings.github_token or "").strip()
+        if not token:
+            raise ValueError("GITHUB_TOKEN is required to push branches to GitHub over HTTPS")
+
+        try:
+            original = next(origin.urls)
+        except Exception as err:
+            raise ValueError("No 'origin' remote URL found; cannot push") from err
+
+        if not original.startswith("https://github.com/"):
+            raise ValueError(f"Unsupported origin URL for non-interactive push: {original}")
+
+        # For GitHub HTTPS auth with tokens, using "x-access-token" is the most robust username.
+        owner = "x-access-token"
+        token_enc = urllib.parse.quote(token, safe="")
+        # Use plain string replace to avoid regex escaping mistakes.
+        authed_url = original.replace(
+            "https://github.com/",
+            f"https://{owner}:{token_enc}@github.com/",
+            1,
+        )
+
+        logger.info("Pushing branch to GitHub (token auth, non-interactive)")
+        self.repo.git.push("--porcelain", "--force", authed_url, branch_name)
 
     def get_file_content(self, file_path: str) -> str:
         """Get file content from repository."""

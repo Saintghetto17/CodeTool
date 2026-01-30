@@ -1,6 +1,8 @@
 """AI Reviewer Agent - reviews pull requests and provides feedback."""
 
+import json
 import logging
+from pathlib import Path
 from typing import Any
 
 from code_agent.config import settings
@@ -17,10 +19,12 @@ class ReviewerAgent:
         self,
         github_client: GitHubClient | None = None,
         llm_service: LLMService | None = None,
+        repo_path: str | None = None,
     ) -> None:
         """Initialize Reviewer Agent."""
         self.github_client = github_client or GitHubClient()
         self.llm_service = llm_service or LLMService()
+        self.repo_path = repo_path
 
     def review_pull_request(self, pr_number: int) -> dict[str, Any]:
         """Review a pull request and provide feedback."""
@@ -30,6 +34,10 @@ class ReviewerAgent:
             getattr(self.github_client, "repo_name", "unknown"),
             getattr(getattr(self.github_client, "repo", None), "url", "unknown"),
         )
+
+        # DEMO_MODE: allow reviewing local diff artifacts without GitHub PR access.
+        if settings.demo_mode and pr_number == 0:
+            return self._review_demo_artifacts()
 
         # Get PR details
         pr = self.github_client.get_pull_request(pr_number)
@@ -72,8 +80,61 @@ class ReviewerAgent:
         logger.info(f"Review complete: {'approved' if review_result['approved'] else 'changes requested'}")
 
         # Post review to GitHub
-        self._post_review(pr_number, review_result)
+        if not settings.demo_mode:
+            self._post_review(pr_number, review_result)
 
+        return review_result
+
+    def _review_demo_artifacts(self) -> dict[str, Any]:
+        """Review latest demo diff artifact saved by CodeAgent (DEMO_MODE)."""
+        repo_path = self.repo_path or "."
+        demo_dir = Path(repo_path) / ".code_agent_demo"
+        last_run_path = demo_dir / "last_run.json"
+
+        if not last_run_path.exists():
+            return {
+                "approved": False,
+                "feedback": (
+                    "DEMO_MODE is enabled, but no demo artifacts were found.\n\n"
+                    f"Expected: {last_run_path}\n"
+                    "Run: process-issue <N> first (with DEMO_MODE=1)."
+                ),
+                "issues": ["Missing demo artifacts"],
+            }
+
+        last_run = json.loads(last_run_path.read_text(encoding="utf-8"))
+        diff_path_raw = Path(str(last_run.get("diff_path", "")).strip())
+        diff_path = diff_path_raw
+        if diff_path_raw and not diff_path_raw.is_absolute():
+            # Prefer resolving relative to the repo root; also fall back to CWD for older artifacts.
+            candidate_repo = (Path(repo_path) / diff_path_raw).resolve()
+            candidate_cwd = diff_path_raw.resolve()
+            diff_path = candidate_repo if candidate_repo.exists() else candidate_cwd
+
+        pr_diff = ""
+        if diff_path.exists():
+            pr_diff = diff_path.read_text(encoding="utf-8")
+
+        issue_number = last_run.get("issue_number")
+        issue_description = last_run.get("pr_title", "Demo change")
+        if issue_number:
+            try:
+                issue_details = self.github_client.get_issue_details(int(issue_number))
+                issue_description = f"{issue_details['title']}\n\n{issue_details['body']}"
+            except Exception as e:
+                logger.warning("Could not fetch issue details in DEMO_MODE: %s", e)
+
+        if not pr_diff.strip():
+            return {
+                "approved": False,
+                "feedback": f"Demo diff is empty or missing: {diff_path}",
+                "issues": ["No diff content"],
+            }
+
+        ci_results = "DEMO_MODE: CI not executed (local artifact review)."
+        review_result = self.llm_service.review_code_changes(pr_diff, issue_description, ci_results)
+        review_result["demo_mode"] = True
+        review_result["diff_path"] = str(diff_path)
         return review_result
 
     def _format_ci_results(self, checks: list[dict[str, Any]]) -> str:

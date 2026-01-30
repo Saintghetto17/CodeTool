@@ -21,15 +21,30 @@ class Settings(BaseSettings):
     openai_model: str = Field("gpt-4o-mini", description="OpenAI model to use")
     openai_base_url: str | None = Field(None, description="Custom OpenAI API base URL")
 
+    openrouter_api_key: str | None = Field(None, description="OpenRouter API key")
+    openrouter_model: str = Field("openai/gpt-4o-mini", description="OpenRouter model to use")
+    openrouter_base_url: str = Field(
+        "https://openrouter.ai/api/v1", description="OpenRouter OpenAI-compatible base URL"
+    )
+
     yandex_api_key: str | None = Field(None, description="Yandex GPT API key")
     yandex_folder_id: str | None = Field(None, description="Yandex Cloud folder ID")
 
     # LLM provider selection
-    llm_provider: str = Field("openai", description="LLM provider: openai or yandex")
+    llm_provider: str = Field(
+        "openai", description="LLM provider: openai, openrouter or yandex"
+    )
 
     # Agent settings
     max_iterations: int = Field(5, description="Maximum number of fix iterations")
     agent_branch_prefix: str = Field("agent/", description="Prefix for agent branches")
+    demo_mode: bool = Field(
+        False,
+        description=(
+            "If true, do not hard-fail on push/PR permission errors; "
+            "save local diff artifacts and output a pseudo-PR for demos."
+        ),
+    )
 
     # Logging
     log_level: str = Field("INFO", description="Logging level")

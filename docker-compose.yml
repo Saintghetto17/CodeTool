@@ -13,6 +13,9 @@ services:
       # Important: empty OPENAI_BASE_URL breaks OpenAI SDK (missing http/https).
       # Default to official endpoint.
       - OPENAI_BASE_URL=${OPENAI_BASE_URL:-https://api.openai.com/v1}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+      - OPENROUTER_MODEL=${OPENROUTER_MODEL:-openai/gpt-4o-mini}
+      - OPENROUTER_BASE_URL=${OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}
       - YANDEX_API_KEY=${YANDEX_API_KEY:-}
       - YANDEX_FOLDER_ID=${YANDEX_FOLDER_ID:-}
       - LLM_PROVIDER=${LLM_PROVIDER:-openai}
@@ -35,6 +38,9 @@ services:
       context: .
       dockerfile: Dockerfile
     image: code-agent:latest
+    # Default to root for "it never breaks" demos; optionally run as host user to avoid root-owned files.
+    # Pass HOST_UID/HOST_GID when you care about ownership.
+    user: "${HOST_UID:-0}:${HOST_GID:-0}"
     environment:
       - GITHUB_TOKEN=${GITHUB_TOKEN}
       - GITHUB_REPO=${GITHUB_REPO}
@@ -43,11 +49,21 @@ services:
       # Important: empty OPENAI_BASE_URL breaks OpenAI SDK (missing http/https).
       # Default to official endpoint.
       - OPENAI_BASE_URL=${OPENAI_BASE_URL:-https://api.openai.com/v1}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+      - OPENROUTER_MODEL=${OPENROUTER_MODEL:-openai/gpt-4o-mini}
+      - OPENROUTER_BASE_URL=${OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}
       - YANDEX_API_KEY=${YANDEX_API_KEY:-}
       - YANDEX_FOLDER_ID=${YANDEX_FOLDER_ID:-}
       - LLM_PROVIDER=${LLM_PROVIDER:-openai}
       - MAX_ITERATIONS=${MAX_ITERATIONS:-5}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - GIT_TERMINAL_PROMPT=0
+      - DEMO_MODE=${DEMO_MODE:-0}
+      # Ensure git commits work even when running container with a host UID not present in /etc/passwd
+      - GIT_AUTHOR_NAME=Code Agent Bot
+      - GIT_AUTHOR_EMAIL=code-agent@users.noreply.github.com
+      - GIT_COMMITTER_NAME=Code Agent Bot
+      - GIT_COMMITTER_EMAIL=code-agent@users.noreply.github.com
     volumes:
       - ./:/workspace:rw
       - ~/.gitconfig:/home/codeagent/.gitconfig:ro

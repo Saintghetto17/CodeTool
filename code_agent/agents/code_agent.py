@@ -1,7 +1,10 @@
 """Code Agent - analyzes issues and creates pull requests."""
 
+import json
 import logging
 import os
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 from code_agent.config import settings
@@ -43,10 +46,18 @@ class CodeAgent:
         logger.info(f"Analysis: {analysis['analysis'][:200]}...")
 
         # Create branch
+        base_branch = "main"
         branch_name = f"{settings.agent_branch_prefix}issue-{issue_number}"
-        self.git_repo.create_branch(branch_name)
-
-        logger.info(f"Created branch: {branch_name}")
+        try:
+            self.git_repo.create_branch(branch_name, base_branch=base_branch)
+            logger.info(f"Created branch: {branch_name}")
+        except Exception as e:
+            msg = f"git create_branch failed: {type(e).__name__}: {e}"
+            if settings.demo_mode:
+                logger.warning("DEMO_MODE enabled: %s. Continuing on current branch.", msg)
+            else:
+                logger.error(msg)
+                return {"success": False, "error": msg}
 
         # Identify and modify files
         files_modified = self._modify_files(issue_description, analysis)
@@ -60,32 +71,139 @@ class CodeAgent:
 
         # Commit changes
         commit_message = f"Fix #{issue_number}: {issue_details['title']}"
-        self.git_repo.commit_changes(commit_message, files_modified)
-
-        logger.info(f"Committed changes: {len(files_modified)} files")
+        try:
+            self.git_repo.commit_changes(commit_message, files_modified)
+            logger.info(f"Committed changes: {len(files_modified)} files")
+        except Exception as e:
+            msg = f"git commit failed: {type(e).__name__}: {e}"
+            if settings.demo_mode:
+                logger.warning("DEMO_MODE enabled: %s. Will continue with uncommitted diff.", msg)
+            else:
+                logger.error(msg)
+                return {"success": False, "error": msg}
 
         # Push branch
-        self.git_repo.push_branch(branch_name)
+        try:
+            self.git_repo.push_branch(branch_name)
+            logger.info(f"Pushed branch: {branch_name}")
+        except Exception as e:
+            if not settings.demo_mode:
+                msg = f"git push failed: {type(e).__name__}: {e}"
+                logger.error(msg)
+                return {"success": False, "error": msg}
 
-        logger.info(f"Pushed branch: {branch_name}")
+            # Demo fallback: save diff + metadata and return a pseudo PR result.
+            demo_dir = Path(self.repo_path) / ".code_agent_demo"
+            demo_dir.mkdir(parents=True, exist_ok=True)
+            diff_path = demo_dir / f"issue-{issue_number}.diff"
+            last_run_path = demo_dir / "last_run.json"
+
+            diff = ""
+            try:
+                diff = self.git_repo.repo.git.diff(f"{base_branch}...HEAD")
+            except Exception as diff_err:
+                diff = f"# Failed to compute git diff: {type(diff_err).__name__}: {diff_err}\n"
+            diff_path.write_text(diff, encoding="utf-8")
+
+            pr_title = f"Fix #{issue_number}: {issue_details['title']}"
+            pr_body = (
+                f"Fixes #{issue_number}\n\n{issue_details['body']}\n\n---\n"
+                "*This PR was automatically created by Code Agent.*"
+            )
+
+            # Store paths relative to the repo root to keep artifacts portable.
+            repo_root = Path(self.repo_path)
+            diff_rel_path = str(Path(".code_agent_demo") / diff_path.name)
+            last_run = {
+                "demo_mode": True,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "repo_path": str(repo_root.resolve()),
+                "issue_number": issue_number,
+                "branch": branch_name,
+                "base_branch": base_branch,
+                "pr_title": pr_title,
+                "pr_body": pr_body,
+                "files_modified": files_modified,
+                "diff_path": diff_rel_path,
+                "push_error": f"{type(e).__name__}: {e}",
+            }
+            last_run_path.write_text(json.dumps(last_run, indent=2), encoding="utf-8")
+
+            logger.warning(
+                "DEMO_MODE enabled: push failed (%s). Saved diff to %s",
+                last_run["push_error"],
+                diff_path,
+            )
+
+            return {
+                "success": True,
+                "demo_mode": True,
+                "issue_number": issue_number,
+                "pr_number": 0,
+                "pr_url": "DEMO_MODE: PR creation skipped (no push permissions)",
+                "branch": branch_name,
+                "files_modified": files_modified,
+                "diff_path": diff_rel_path,
+            }
 
         # Create pull request
         pr_body = f"Fixes #{issue_number}\n\n{issue_details['body']}\n\n---\n*This PR was automatically created by Code Agent.*"
-        pr = self.github_client.create_pull_request(
-            title=f"Fix #{issue_number}: {issue_details['title']}",
-            body=pr_body,
-            head=branch_name,
-        )
+        try:
+            pr = self.github_client.create_pull_request(
+                title=f"Fix #{issue_number}: {issue_details['title']}",
+                body=pr_body,
+                head=branch_name,
+            )
 
-        logger.info(f"Created PR #{pr.number}")
+            logger.info(f"Created PR #{pr.number}")
 
-        return {
-            "success": True,
-            "issue_number": issue_number,
-            "pr_number": pr.number,
-            "branch": branch_name,
-            "files_modified": files_modified,
-        }
+            return {
+                "success": True,
+                "issue_number": issue_number,
+                "pr_number": pr.number,
+                "branch": branch_name,
+                "files_modified": files_modified,
+            }
+        except Exception as e:
+            if not settings.demo_mode:
+                msg = f"create PR failed: {type(e).__name__}: {e}"
+                logger.error(msg)
+                return {"success": False, "error": msg}
+
+            demo_dir = Path(self.repo_path) / ".code_agent_demo"
+            demo_dir.mkdir(parents=True, exist_ok=True)
+            last_run_path = demo_dir / "last_run.json"
+
+            pr_title = f"Fix #{issue_number}: {issue_details['title']}"
+            repo_root = Path(self.repo_path)
+            last_run = {
+                "demo_mode": True,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "repo_path": str(repo_root.resolve()),
+                "issue_number": issue_number,
+                "branch": branch_name,
+                "base_branch": base_branch,
+                "pr_title": pr_title,
+                "pr_body": pr_body,
+                "files_modified": files_modified,
+                "pr_create_error": f"{type(e).__name__}: {e}",
+            }
+            last_run_path.write_text(json.dumps(last_run, indent=2), encoding="utf-8")
+
+            logger.warning(
+                "DEMO_MODE enabled: PR creation failed (%s). Returning pseudo PR result.",
+                last_run["pr_create_error"],
+            )
+
+            return {
+                "success": True,
+                "demo_mode": True,
+                "issue_number": issue_number,
+                "pr_number": 0,
+                "pr_url": "DEMO_MODE: PR creation failed (permissions). Showing local artifacts instead.",
+                "branch": branch_name,
+                "files_modified": files_modified,
+            }
 
     def _modify_files(
         self, issue_description: str, analysis: dict[str, Any]
@@ -143,7 +261,11 @@ class CodeAgent:
         files = set()
         for pattern in patterns:
             matches = re.findall(pattern, text, re.IGNORECASE)
-            files.update(matches)
+            for m in matches:
+                # Some LLM outputs include punctuation/backticks around paths.
+                cleaned = m.strip().strip("`'\"").strip(",:);.")
+                if cleaned.endswith(".py"):
+                    files.add(cleaned)
 
         return list(files)
 
@@ -152,8 +274,18 @@ class CodeAgent:
         # Simple heuristic - in production, use better logic
         files = []
 
-        # Check if issue mentions specific files
-        if "main.py" in issue_description.lower():
+        text = issue_description.lower()
+
+        # If user mentions specific files explicitly
+        if "naivebayes.py" in text:
+            files.append("NaiveBayes.py")
+        if "cli" in text:
+            files.append("cli.py")
+        if "test" in text:
+            files.append("test_cli.py")
+
+        # Generic fallback for many repos
+        if "main.py" in text:
             files.append("main.py")
 
         return files
